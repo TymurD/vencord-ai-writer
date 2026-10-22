@@ -1,18 +1,23 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { BASE_PROMPT, buildSystemPrompt, maskTokens, rewrite, rewriteSafe, shouldRewrite, unmaskTokens } from "../aiWriter/ai.ts";
+import { BASE_PROMPT, buildSystemPrompt, maskTokens, rewrite, rewriteSafe, shouldRewrite, trimToLength, unmaskTokens } from "../aiWriter/ai.ts";
 
 const cfg = { apiKey: "k", model: "m", prompt: "p" };
 
+/** Pass an array of bodies to answer successive calls; the last one repeats. */
 function fakeFetch(status: number, body: unknown) {
+    const bodies = Array.isArray(body) ? body : [body];
     const calls: { url: string; init: RequestInit; }[] = [];
     const fn = (async (url: string, init: RequestInit) => {
         calls.push({ url, init });
-        return new Response(JSON.stringify(body), { status, statusText: "Status" });
+        const next = bodies[Math.min(calls.length - 1, bodies.length - 1)];
+        return new Response(JSON.stringify(next), { status, statusText: "Status" });
     }) as unknown as typeof fetch;
     return { fn, calls };
 }
+
+const messagesOf = (call: { init: RequestInit; }) => JSON.parse(call.init.body as string).messages;
 
 const reply = (content: unknown) => ({ choices: [{ message: { content } }] });
 
@@ -60,18 +65,22 @@ describe("buildSystemPrompt", () => {
 
     it("appends the user's rules after the built-in ones", () => {
         assert.equal(
-            buildSystemPrompt("It must contain 5 names of pizzas", false),
-            `${BASE_PROMPT}\n\nRules for the rewritten message:\nIt must contain 5 names of pizzas`
+            buildSystemPrompt("It must contain 5 names of pizzas", false, 2000),
+            `${BASE_PROMPT}\n\nThe rewritten message must be at most 2000 characters long.\n\nRules for the rewritten message:\nIt must contain 5 names of pizzas`
         );
     });
 
+    it("tells the model the message length limit", () => {
+        assert.match(buildSystemPrompt("x", false, 4000), /at most 4000 characters/);
+    });
+
     it("uses only the built-in rules when the user's prompt is blank", () => {
-        assert.equal(buildSystemPrompt("  \n", false), BASE_PROMPT);
+        assert.equal(buildSystemPrompt("  \n", false, 2000), `${BASE_PROMPT}\n\nThe rewritten message must be at most 2000 characters long.`);
     });
 
     it("adds the placeholder hint only when the message has tokens", () => {
-        assert.match(buildSystemPrompt("x", true), /Keep every placeholder exactly as written\.$/);
-        assert.doesNotMatch(buildSystemPrompt("x", false), /placeholder/);
+        assert.match(buildSystemPrompt("x", true, 2000), /Keep every placeholder exactly as written\.$/);
+        assert.doesNotMatch(buildSystemPrompt("x", false, 2000), /placeholder/);
     });
 });
 
@@ -88,7 +97,7 @@ describe("rewrite", () => {
         assert.deepEqual(JSON.parse(init.body as string), {
             model: "m",
             messages: [
-                { role: "system", content: buildSystemPrompt("p", false) },
+                { role: "system", content: buildSystemPrompt("p", false, 2000) },
                 { role: "user", content: "hello" }
             ]
         });
@@ -127,7 +136,7 @@ describe("rewrite", () => {
         assert.equal(result, "Hey <@123>, look <:wave:456>");
         const [system, user] = JSON.parse(calls[0].init.body as string).messages;
         assert.equal(user.content, "yo ⟦0⟧ see ⟦1⟧");
-        assert.equal(system.content, buildSystemPrompt("p", true));
+        assert.equal(system.content, buildSystemPrompt("p", true, 2000));
     });
 
     it("puts back a mention the model dropped at the start", async () => {
@@ -143,19 +152,43 @@ describe("rewrite", () => {
         );
     });
 
-    it("checks the length limit after restoring tokens", async () => {
-        const { fn } = fakeFetch(200, reply("a".repeat(1995) + " ⟦0⟧"));
-        await assert.rejects(rewrite("<@123456789012345678>", cfg, fn), /too long \(2017\/2000\)/);
+    it("asks the model once to shorten an over-long reply", async () => {
+        const long = "a".repeat(2001);
+        const { fn, calls } = fakeFetch(200, [reply(long), reply("short")]);
+        assert.equal(await rewrite("hello", cfg, fn), "short");
+
+        assert.equal(calls.length, 2);
+        const msgs = messagesOf(calls[1]);
+        assert.deepEqual(msgs.slice(0, 3), [...messagesOf(calls[0]), { role: "assistant", content: long }]);
+        assert.equal(msgs[3].role, "user");
+        assert.match(msgs[3].content, /2001 characters.*at most 2000/);
     });
 
-    it("rejects a reply longer than the message limit", async () => {
-        const { fn } = fakeFetch(200, reply("a".repeat(2001)));
-        await assert.rejects(rewrite("hello", cfg, fn), /too long \(2001\/2000\)/);
+    it("counts restored mentions toward the limit", async () => {
+        const { fn, calls } = fakeFetch(200, [reply("a".repeat(1995) + " ⟦0⟧"), reply("ok ⟦0⟧")]);
+        assert.equal(await rewrite("<@123456789012345678>", cfg, fn), "ok <@123456789012345678>");
+        assert.equal(calls.length, 2);
+    });
+
+    it("trims at a sentence end when the shortened reply is still too long", async () => {
+        const { fn, calls } = fakeFetch(200, reply("This is a sentence. ".repeat(150)));
+        const result = await rewrite("hello", cfg, fn);
+        assert.equal(calls.length, 2);
+        assert.ok(result.length <= 2000);
+        assert.ok(result.endsWith("sentence."));
+    });
+
+    it("keeps a dropped ping when trimming", async () => {
+        const { fn } = fakeFetch(200, reply("Blah blah. ".repeat(300)));
+        const result = await rewrite("<@123456789012345678>", cfg, fn);
+        assert.ok(result.startsWith("<@123456789012345678> Blah"));
+        assert.ok(result.length <= 2000);
     });
 
     it("respects a custom message limit", async () => {
-        const { fn } = fakeFetch(200, reply("a".repeat(2001)));
+        const { fn, calls } = fakeFetch(200, reply("a".repeat(2001)));
         assert.equal((await rewrite("hello", { ...cfg, maxLength: 4000 }, fn)).length, 2001);
+        assert.equal(calls.length, 1);
     });
 
     it("passes an abort signal so the request can time out", async () => {
@@ -174,6 +207,24 @@ describe("rewrite", () => {
     it("rejects a whitespace-only reply", async () => {
         const { fn } = fakeFetch(200, reply("   "));
         await assert.rejects(rewrite("hello", cfg, fn), /empty reply/);
+    });
+});
+
+describe("trimToLength", () => {
+    it("leaves text within the limit untouched", () => {
+        assert.equal(trimToLength("Hi there.", 20), "Hi there.");
+    });
+
+    it("cuts at the last sentence end that fits", () => {
+        assert.equal(trimToLength("One two three. Four five six! Seven eight", 33), "One two three. Four five six!");
+    });
+
+    it("falls back to the last whole word when no sentence end is close enough", () => {
+        assert.equal(trimToLength("Hi. alpha beta gamma delta epsilon", 25), "Hi. alpha beta gamma");
+    });
+
+    it("hard-cuts a single huge word", () => {
+        assert.equal(trimToLength("x".repeat(50), 10), "x".repeat(10));
     });
 });
 
