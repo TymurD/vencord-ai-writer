@@ -15,7 +15,9 @@ export const settings = definePluginSettings({
     apiKey: {
         type: OptionType.STRING,
         description: "OpenRouter API key",
-        default: ""
+        default: "",
+        // Edited in the masked field of the right-click window, not shown in plain text here.
+        hidden: true
     },
     rewriteEdits: {
         type: OptionType.BOOLEAN,

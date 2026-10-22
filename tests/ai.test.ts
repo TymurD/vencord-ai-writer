@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { rewrite, shouldRewrite } from "../aiWriter/ai.ts";
+import { maskTokens, rewrite, shouldRewrite, unmaskTokens } from "../aiWriter/ai.ts";
 
 const cfg = { apiKey: "k", model: "m", prompt: "p" };
 
@@ -21,6 +21,30 @@ describe("shouldRewrite", () => {
     it("skips empty text", () => assert.equal(shouldRewrite(""), false));
     it("skips whitespace-only text", () => assert.equal(shouldRewrite("   \n"), false));
     it("skips slash commands", () => assert.equal(shouldRewrite("/shrug"), false));
+    it("skips slash commands after leading whitespace", () => assert.equal(shouldRewrite("  /shrug"), false));
+});
+
+describe("maskTokens", () => {
+    const text = "hi <@123> <@!4> <@&5> <#9> <:wave:456> <a:dance:7> <t:1700000000:R> </ping:8>";
+
+    it("replaces every Discord token with a numbered placeholder", () => {
+        const { masked, tokens } = maskTokens(text);
+        assert.equal(masked, "hi ⟦0⟧ ⟦1⟧ ⟦2⟧ ⟦3⟧ ⟦4⟧ ⟦5⟧ ⟦6⟧ ⟦7⟧");
+        assert.deepEqual(tokens, ["<@123>", "<@!4>", "<@&5>", "<#9>", "<:wave:456>", "<a:dance:7>", "<t:1700000000:R>", "</ping:8>"]);
+    });
+
+    it("leaves ordinary angle brackets alone", () => {
+        assert.deepEqual(maskTokens("a <b> c <https://x.y>"), { masked: "a <b> c <https://x.y>", tokens: [] });
+    });
+
+    it("round-trips through unmaskTokens, even when reordered", () => {
+        const { tokens } = maskTokens(text);
+        assert.equal(unmaskTokens("⟦4⟧ thanks ⟦0⟧", tokens), "<:wave:456> thanks <@123>");
+    });
+
+    it("keeps unknown placeholders as-is", () => {
+        assert.equal(unmaskTokens("x ⟦9⟧", ["<@1>"]), "x ⟦9⟧");
+    });
 });
 
 describe("rewrite", () => {
@@ -59,8 +83,29 @@ describe("rewrite", () => {
     });
 
     it("rejects a 200 response without choices", async () => {
-        const { fn } = fakeFetch(200, { error: { message: "x" } });
+        const { fn } = fakeFetch(200, {});
         await assert.rejects(rewrite("hello", cfg, fn), /empty reply/);
+    });
+
+    it("surfaces OpenRouter's error message on a 200 response", async () => {
+        const { fn } = fakeFetch(200, { error: { message: "upstream moderation" } });
+        await assert.rejects(rewrite("hello", cfg, fn), /OpenRouter: upstream moderation/);
+    });
+
+    it("sends mentions as placeholders and restores them in the reply", async () => {
+        const { fn, calls } = fakeFetch(200, reply("Hey ⟦0⟧, look ⟦1⟧"));
+        const result = await rewrite("yo <@123> see <:wave:456>", cfg, fn);
+
+        assert.equal(result, "Hey <@123>, look <:wave:456>");
+        const [system, user] = JSON.parse(calls[0].init.body as string).messages;
+        assert.equal(user.content, "yo ⟦0⟧ see ⟦1⟧");
+        assert.ok(system.content.startsWith("p\n\n"));
+        assert.match(system.content, /Keep every placeholder exactly/);
+    });
+
+    it("checks the length limit after restoring tokens", async () => {
+        const { fn } = fakeFetch(200, reply("a".repeat(1995) + " ⟦0⟧"));
+        await assert.rejects(rewrite("<@123456789012345678>", cfg, fn), /too long \(2017\/2000\)/);
     });
 
     it("rejects a reply longer than the message limit", async () => {

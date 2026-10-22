@@ -24,7 +24,7 @@ const SparkleIcon: IconComponent = ({ height = 20, width = 20, className }) => (
     </svg>
 );
 
-const AiToggleButton: ChatBarButtonFactory = ({ isMainChat }) => {
+const AiToggleButton: ChatBarButtonFactory = ({ isAnyChat }) => {
     const [enabled, setEnabled] = useState(aiEnabled);
 
     useEffect(() => {
@@ -32,7 +32,8 @@ const AiToggleButton: ChatBarButtonFactory = ({ isMainChat }) => {
         return () => void modeListeners.delete(setEnabled);
     }, []);
 
-    if (!isMainChat) return null;
+    // Rewrites apply to every composer (incl. threads), so show the state in all of them.
+    if (!isAnyChat) return null;
 
     return (
         <ChatBarButton
