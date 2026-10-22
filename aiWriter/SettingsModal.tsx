@@ -27,12 +27,12 @@ function SettingsModal({ modalProps }: { modalProps: RenderModalProps; }) {
         >
             <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
                 <section>
-                    <HeadingSecondary>Instructions</HeadingSecondary>
+                    <HeadingSecondary>Rules</HeadingSecondary>
                     <TextArea
                         value={prompt}
                         onChange={setPrompt}
                         rows={6}
-                        placeholder="e.g. Make it sound casual and fix my spelling. No need to say 'reply with only the message', that's built in."
+                        placeholder={"One rule per line. \"It\" means your message, e.g.\nIt must sound casual.\nIt must contain 5 names of pizzas."}
                     />
                 </section>
                 <section>

@@ -53,8 +53,16 @@ describe("buildSystemPrompt", () => {
         assert.match(BASE_PROMPT, /same language/);
     });
 
-    it("appends the user's instructions after the built-in rules", () => {
-        assert.equal(buildSystemPrompt("make it funny", false), `${BASE_PROMPT}\n\nUser's instructions:\nmake it funny`);
+    it("tells the model the user's rules describe the final message and must all be followed", () => {
+        assert.match(BASE_PROMPT, /"it" means the rewritten message/);
+        assert.match(BASE_PROMPT, /must follow every rule/);
+    });
+
+    it("appends the user's rules after the built-in ones", () => {
+        assert.equal(
+            buildSystemPrompt("It must contain 5 names of pizzas", false),
+            `${BASE_PROMPT}\n\nRules for the rewritten message:\nIt must contain 5 names of pizzas`
+        );
     });
 
     it("uses only the built-in rules when the user's prompt is blank", () => {

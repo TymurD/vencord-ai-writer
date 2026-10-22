@@ -4,7 +4,7 @@ import { OptionType } from "@utils/types";
 export const settings = definePluginSettings({
     prompt: {
         type: OptionType.STRING,
-        description: "How the AI should rewrite your messages (the reply-with-only-the-message rules are built in)",
+        description: "Rules your rewritten message must follow (\"it\" = your message)",
         default: "Fix spelling and grammar and make it sound natural."
     },
     model: {
