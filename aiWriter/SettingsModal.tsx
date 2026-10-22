@@ -27,8 +27,13 @@ function SettingsModal({ modalProps }: { modalProps: RenderModalProps; }) {
         >
             <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
                 <section>
-                    <HeadingSecondary>Prompt</HeadingSecondary>
-                    <TextArea value={prompt} onChange={setPrompt} rows={6} />
+                    <HeadingSecondary>Instructions</HeadingSecondary>
+                    <TextArea
+                        value={prompt}
+                        onChange={setPrompt}
+                        rows={6}
+                        placeholder="e.g. Make it sound casual and fix my spelling. No need to say 'reply with only the message', that's built in."
+                    />
                 </section>
                 <section>
                     <HeadingSecondary>Model</HeadingSecondary>

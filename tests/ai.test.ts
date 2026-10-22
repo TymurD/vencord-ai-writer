@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { maskTokens, rewrite, rewriteSafe, shouldRewrite, unmaskTokens } from "../aiWriter/ai.ts";
+import { BASE_PROMPT, buildSystemPrompt, maskTokens, rewrite, rewriteSafe, shouldRewrite, unmaskTokens } from "../aiWriter/ai.ts";
 
 const cfg = { apiKey: "k", model: "m", prompt: "p" };
 
@@ -47,6 +47,26 @@ describe("maskTokens", () => {
     });
 });
 
+describe("buildSystemPrompt", () => {
+    it("always tells the model to reply with only the message, in the same language", () => {
+        assert.match(BASE_PROMPT, /only the rewritten message/);
+        assert.match(BASE_PROMPT, /same language/);
+    });
+
+    it("appends the user's instructions after the built-in rules", () => {
+        assert.equal(buildSystemPrompt("make it funny", false), `${BASE_PROMPT}\n\nUser's instructions:\nmake it funny`);
+    });
+
+    it("uses only the built-in rules when the user's prompt is blank", () => {
+        assert.equal(buildSystemPrompt("  \n", false), BASE_PROMPT);
+    });
+
+    it("adds the placeholder hint only when the message has tokens", () => {
+        assert.match(buildSystemPrompt("x", true), /Keep every placeholder exactly as written\.$/);
+        assert.doesNotMatch(buildSystemPrompt("x", false), /placeholder/);
+    });
+});
+
 describe("rewrite", () => {
     it("sends the expected request", async () => {
         const { fn, calls } = fakeFetch(200, reply("ok"));
@@ -60,7 +80,7 @@ describe("rewrite", () => {
         assert.deepEqual(JSON.parse(init.body as string), {
             model: "m",
             messages: [
-                { role: "system", content: "p" },
+                { role: "system", content: buildSystemPrompt("p", false) },
                 { role: "user", content: "hello" }
             ]
         });
@@ -99,8 +119,7 @@ describe("rewrite", () => {
         assert.equal(result, "Hey <@123>, look <:wave:456>");
         const [system, user] = JSON.parse(calls[0].init.body as string).messages;
         assert.equal(user.content, "yo ⟦0⟧ see ⟦1⟧");
-        assert.ok(system.content.startsWith("p\n\n"));
-        assert.match(system.content, /Keep every placeholder exactly/);
+        assert.equal(system.content, buildSystemPrompt("p", true));
     });
 
     it("checks the length limit after restoring tokens", async () => {
