@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { rewrite, shouldRewrite } from "./ai.ts";
+import { rewrite, shouldRewrite } from "../aiWriter/ai.ts";
 
 const cfg = { apiKey: "k", model: "m", prompt: "p" };
 
