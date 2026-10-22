@@ -63,6 +63,29 @@ describe("rewrite", () => {
         await assert.rejects(rewrite("hello", cfg, fn), /empty reply/);
     });
 
+    it("rejects a reply longer than the message limit", async () => {
+        const { fn } = fakeFetch(200, reply("a".repeat(2001)));
+        await assert.rejects(rewrite("hello", cfg, fn), /too long \(2001\/2000\)/);
+    });
+
+    it("respects a custom message limit", async () => {
+        const { fn } = fakeFetch(200, reply("a".repeat(2001)));
+        assert.equal((await rewrite("hello", { ...cfg, maxLength: 4000 }, fn)).length, 2001);
+    });
+
+    it("passes an abort signal so the request can time out", async () => {
+        const { fn, calls } = fakeFetch(200, reply("ok"));
+        await rewrite("hello", cfg, fn);
+        assert.ok(calls[0].init.signal instanceof AbortSignal);
+    });
+
+    it("reports a timeout clearly", async () => {
+        const fn = (async () => {
+            throw new DOMException("timed out", "TimeoutError");
+        }) as unknown as typeof fetch;
+        await assert.rejects(rewrite("hello", cfg, fn), /OpenRouter request timed out/);
+    });
+
     it("rejects a whitespace-only reply", async () => {
         const { fn } = fakeFetch(200, reply("   "));
         await assert.rejects(rewrite("hello", cfg, fn), /empty reply/);

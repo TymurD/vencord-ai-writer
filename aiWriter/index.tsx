@@ -1,6 +1,6 @@
 import { ChatBarButton, ChatBarButtonFactory } from "@api/ChatButtons";
 import definePlugin, { IconComponent } from "@utils/types";
-import { showToast, useEffect, useState } from "@webpack/common";
+import { showToast, useEffect, UserStore, useState } from "@webpack/common";
 
 import { rewrite, shouldRewrite } from "./ai";
 import { settings } from "./settings";
@@ -56,7 +56,9 @@ async function maybeRewrite(msg: { content: string; }) {
     showToast({ text: "Rewriting…" });
     try {
         const { apiKey, model, prompt } = settings.store;
-        msg.content = await rewrite(msg.content, { apiKey, model, prompt });
+        // premiumType 2 = full Nitro, which raises Discord's limit to 4000
+        const maxLength = UserStore.getCurrentUser()?.premiumType === 2 ? 4000 : 2000;
+        msg.content = await rewrite(msg.content, { apiKey, model, prompt, maxLength });
     } catch (e) {
         showToast({ text: `AI Writer: ${e instanceof Error ? e.message : String(e)}`, variant: "critical" });
         return { cancel: true };
