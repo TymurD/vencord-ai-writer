@@ -37,7 +37,7 @@ function SettingsModal({ modalProps }: { modalProps: RenderModalProps; }) {
                 </section>
                 <section>
                     <HeadingSecondary>Model</HeadingSecondary>
-                    <TextInput value={model} onChange={setModel} placeholder="anthropic/claude-sonnet-5-5" />
+                    <TextInput value={model} onChange={setModel} placeholder="x-ai/grok-4.3" />
                 </section>
                 <section>
                     <HeadingSecondary>OpenRouter API key</HeadingSecondary>

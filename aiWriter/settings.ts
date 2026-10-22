@@ -10,7 +10,7 @@ export const settings = definePluginSettings({
     model: {
         type: OptionType.STRING,
         description: "OpenRouter model id",
-        default: "anthropic/claude-sonnet-5-5"
+        default: "x-ai/grok-4.3"
     },
     apiKey: {
         type: OptionType.STRING,
