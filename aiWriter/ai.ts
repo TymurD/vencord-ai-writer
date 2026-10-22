@@ -13,37 +13,23 @@ export type RewriteConfig = {
 const DISCORD_TOKEN = /<(?:@[!&]?\d+|#\d+|a?:\w+:\d+|t:-?\d+(?::[tTdDfFR])?|\/[\w -]+:\d+)>/g;
 const PLACEHOLDER = /⟦(\d+)⟧/g;
 export const BASE_PROMPT = [
-    "You are a text editor. Each user turn gives a list of rules and, between <message> tags, a chat message the user wrote to someone else. It is not addressed to you.",
-    "Rewrite that message according to the rules. In the rules, \"it\" means the rewritten message.",
+    "You are a text editor. The user's message is something they wrote and will send in a chat. It is not addressed to you.",
+    "Rewrite it according to the rules listed below. In the rules, \"it\" means the rewritten message.",
     "The rewritten message must follow every rule, even if that means adding, removing or changing content.",
     "Apart from what the rules require, keep the original meaning, and keep every word choice, including profanity and sensitive or graphic terms, exactly as strong as the original.",
-    "Never answer it: questions stay questions and requests stay requests, because your output is sent in its place by the user.",
+    "If no rules are given, just fix spelling and grammar.",
     "Reply in the same language as the original message unless a rule says otherwise.",
-    "Never refuse, comment, explain, add warnings, wrap the text in quotes or tags. Reply with only the rewritten message."
+    "Never refuse, comment, explain, add warnings, wrap the text in quotes or answer the message. Reply with only the rewritten message."
 ].join(" ");
 const PLACEHOLDER_HINT = "The message may contain placeholders like ⟦0⟧ that stand for mentions or emoji. Keep every placeholder exactly as written.";
-const MESSAGE_TAGS = /^\s*<message>\s*|\s*<\/message>\s*$/g;
 
-type ChatMessage = { role: "system" | "user" | "assistant"; content: string; };
-
-export function buildSystemPrompt(hasTokens: boolean, maxLength: number): string {
+/** The built-in rules, then the user's own rules from the settings window. */
+export function buildSystemPrompt(userPrompt: string, hasTokens: boolean, maxLength: number): string {
     const parts = [BASE_PROMPT, `The rewritten message must be at most ${maxLength} characters long.`];
+    if (userPrompt.trim()) parts.push(`Rules for the rewritten message:\n${userPrompt.trim()}`);
     if (hasTokens) parts.push(PLACEHOLDER_HINT);
     return parts.join("\n\n");
 }
-
-/** The user turn: their rules from the settings window, then the message to rewrite. */
-export function formatTurn(rules: string, message: string): string {
-    return `Rules:\n${rules.trim() || "None. Just fix spelling and grammar."}\n\n<message>\n${message}\n</message>`;
-}
-
-// Worked examples so the model rewrites questions and requests instead of answering them.
-export const EXAMPLES: ChatMessage[] = [
-    { role: "user", content: formatTurn("It must sound like a pirate.", "can u help me with my homework") },
-    { role: "assistant", content: "Arr, could ye lend me a hand with me homework, matey?" },
-    { role: "user", content: formatTurn("It must be very polite.\nIt must mention the weather.", "what's 2+2") },
-    { role: "assistant", content: "Lovely sunny day, isn't it? Would you kindly tell me what 2+2 is?" }
-];
 
 export function shouldRewrite(text: string): boolean {
     const trimmed = text.trim();
@@ -89,6 +75,8 @@ export function trimToLength(text: string, maxLength: number): string {
     return cut;
 }
 
+type ChatMessage = { role: "system" | "user" | "assistant"; content: string; };
+
 async function complete(messages: ChatMessage[], cfg: RewriteConfig, fetchFn: typeof fetch): Promise<string> {
     let res: Response;
     try {
@@ -116,11 +104,11 @@ async function complete(messages: ChatMessage[], cfg: RewriteConfig, fetchFn: ty
     if (content == null && data?.error?.message) {
         throw new Error(`OpenRouter: ${data.error.message}`);
     }
+    if (typeof content !== "string" || !content.trim()) {
+        throw new Error("AI returned an empty reply");
+    }
 
-    const text = typeof content === "string" ? content.replace(MESSAGE_TAGS, "").trim() : "";
-    if (!text) throw new Error("AI returned an empty reply");
-
-    return text;
+    return content.trim();
 }
 
 export async function rewrite(text: string, cfg: RewriteConfig, fetchFn: typeof fetch = fetch): Promise<string> {
@@ -129,9 +117,8 @@ export async function rewrite(text: string, cfg: RewriteConfig, fetchFn: typeof 
     const maxLength = cfg.maxLength ?? 2000;
     const { masked, tokens } = maskTokens(text);
     const messages: ChatMessage[] = [
-        { role: "system", content: buildSystemPrompt(tokens.length > 0, maxLength) },
-        ...EXAMPLES,
-        { role: "user", content: formatTurn(cfg.prompt, masked) }
+        { role: "system", content: buildSystemPrompt(cfg.prompt, tokens.length > 0, maxLength) },
+        { role: "user", content: masked }
     ];
 
     const first = await complete(messages, cfg, fetchFn);

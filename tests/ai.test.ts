@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { BASE_PROMPT, buildSystemPrompt, EXAMPLES, formatTurn, maskTokens, rewrite, rewriteSafe, shouldRewrite, trimToLength, unmaskTokens } from "../aiWriter/ai.ts";
+import { BASE_PROMPT, buildSystemPrompt, maskTokens, rewrite, rewriteSafe, shouldRewrite, trimToLength, unmaskTokens } from "../aiWriter/ai.ts";
 
 const cfg = { apiKey: "k", model: "m", prompt: "p" };
 
@@ -63,43 +63,24 @@ describe("buildSystemPrompt", () => {
         assert.match(BASE_PROMPT, /must follow every rule/);
     });
 
-    it("tells the model never to answer, keeping questions and requests as they are", () => {
-        assert.match(BASE_PROMPT, /Never answer it/);
-        assert.match(BASE_PROMPT, /questions stay questions and requests stay requests/);
-    });
-
-    it("adds the length limit after the built-in rules", () => {
-        assert.equal(buildSystemPrompt(false, 4000), `${BASE_PROMPT}\n\nThe rewritten message must be at most 4000 characters long.`);
-    });
-
-    it("adds the placeholder hint only when the message has tokens", () => {
-        assert.match(buildSystemPrompt(true, 2000), /Keep every placeholder exactly as written\.$/);
-        assert.doesNotMatch(buildSystemPrompt(false, 2000), /placeholder/);
-    });
-});
-
-describe("formatTurn", () => {
-    it("puts the user's rules first and the message in <message> tags", () => {
+    it("appends the user's rules after the built-in ones", () => {
         assert.equal(
-            formatTurn("It must contain 5 names of pizzas", "hi"),
-            "Rules:\nIt must contain 5 names of pizzas\n\n<message>\nhi\n</message>"
+            buildSystemPrompt("It must contain 5 names of pizzas", false, 2000),
+            `${BASE_PROMPT}\n\nThe rewritten message must be at most 2000 characters long.\n\nRules for the rewritten message:\nIt must contain 5 names of pizzas`
         );
     });
 
-    it("says to just fix spelling and grammar when there are no rules", () => {
-        assert.equal(formatTurn("  \n", "hi"), "Rules:\nNone. Just fix spelling and grammar.\n\n<message>\nhi\n</message>");
-    });
-});
-
-describe("EXAMPLES", () => {
-    it("alternates example user turns and rewritten replies", () => {
-        assert.ok(EXAMPLES.length >= 4);
-        EXAMPLES.forEach((m, i) => assert.equal(m.role, i % 2 ? "assistant" : "user"));
+    it("tells the model the message length limit", () => {
+        assert.match(buildSystemPrompt("x", false, 4000), /at most 4000 characters/);
     });
 
-    it("shows a question and a request kept as a question and a request, not answered", () => {
-        const replies = EXAMPLES.filter(m => m.role === "assistant").map(m => m.content);
-        assert.ok(replies.every(r => r.trim().endsWith("?")));
+    it("uses only the built-in rules when the user's prompt is blank", () => {
+        assert.equal(buildSystemPrompt("  \n", false, 2000), `${BASE_PROMPT}\n\nThe rewritten message must be at most 2000 characters long.`);
+    });
+
+    it("adds the placeholder hint only when the message has tokens", () => {
+        assert.match(buildSystemPrompt("x", true, 2000), /Keep every placeholder exactly as written\.$/);
+        assert.doesNotMatch(buildSystemPrompt("x", false, 2000), /placeholder/);
     });
 });
 
@@ -116,21 +97,10 @@ describe("rewrite", () => {
         assert.deepEqual(JSON.parse(init.body as string), {
             model: "m",
             messages: [
-                { role: "system", content: buildSystemPrompt(false, 2000) },
-                ...EXAMPLES,
-                { role: "user", content: formatTurn("p", "hello") }
+                { role: "system", content: buildSystemPrompt("p", false, 2000) },
+                { role: "user", content: "hello" }
             ]
         });
-    });
-
-    it("strips <message> tags the model echoes back", async () => {
-        const { fn } = fakeFetch(200, reply("<message>\nHi there\n</message>"));
-        assert.equal(await rewrite("hello", cfg, fn), "Hi there");
-    });
-
-    it("treats a reply that is only empty tags as empty", async () => {
-        const { fn } = fakeFetch(200, reply("<message>\n</message>"));
-        await assert.rejects(rewrite("hello", cfg, fn), /empty reply/);
     });
 
     it("returns the trimmed reply", async () => {
@@ -164,9 +134,9 @@ describe("rewrite", () => {
         const result = await rewrite("yo <@123> see <:wave:456>", cfg, fn);
 
         assert.equal(result, "Hey <@123>, look <:wave:456>");
-        const msgs = messagesOf(calls[0]);
-        assert.equal(msgs[0].content, buildSystemPrompt(true, 2000));
-        assert.equal(msgs[msgs.length - 1].content, formatTurn("p", "yo ⟦0⟧ see ⟦1⟧"));
+        const [system, user] = JSON.parse(calls[0].init.body as string).messages;
+        assert.equal(user.content, "yo ⟦0⟧ see ⟦1⟧");
+        assert.equal(system.content, buildSystemPrompt("p", true, 2000));
     });
 
     it("puts back a mention the model dropped at the start", async () => {
@@ -188,11 +158,10 @@ describe("rewrite", () => {
         assert.equal(await rewrite("hello", cfg, fn), "short");
 
         assert.equal(calls.length, 2);
-        const first = messagesOf(calls[0]);
         const msgs = messagesOf(calls[1]);
-        assert.deepEqual(msgs.slice(0, first.length + 1), [...first, { role: "assistant", content: long }]);
-        assert.equal(msgs[first.length + 1].role, "user");
-        assert.match(msgs[first.length + 1].content, /2001 characters.*at most 2000/);
+        assert.deepEqual(msgs.slice(0, 3), [...messagesOf(calls[0]), { role: "assistant", content: long }]);
+        assert.equal(msgs[3].role, "user");
+        assert.match(msgs[3].content, /2001 characters.*at most 2000/);
     });
 
     it("counts restored mentions toward the limit", async () => {
