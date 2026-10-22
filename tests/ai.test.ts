@@ -130,6 +130,19 @@ describe("rewrite", () => {
         assert.equal(system.content, buildSystemPrompt("p", true));
     });
 
+    it("puts back a mention the model dropped at the start", async () => {
+        const { fn } = fakeFetch(200, reply("Hark, thou wretched creature"));
+        assert.equal(await rewrite("<@466163485227876352>", cfg, fn), "<@466163485227876352> Hark, thou wretched creature");
+    });
+
+    it("puts back dropped mentions first and dropped emoji last, keeping the ones the model kept in place", async () => {
+        const { fn } = fakeFetch(200, reply("look ⟦1⟧ here"));
+        assert.equal(
+            await rewrite("<@1> <#2> hi <:wave:3> <@&4>", cfg, fn),
+            "<@1> <@&4> look <#2> here <:wave:3>"
+        );
+    });
+
     it("checks the length limit after restoring tokens", async () => {
         const { fn } = fakeFetch(200, reply("a".repeat(1995) + " ⟦0⟧"));
         await assert.rejects(rewrite("<@123456789012345678>", cfg, fn), /too long \(2017\/2000\)/);

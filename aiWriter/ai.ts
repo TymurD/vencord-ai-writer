@@ -47,6 +47,19 @@ export function unmaskTokens(text: string, tokens: string[]): string {
     return text.replace(PLACEHOLDER, (match, i) => tokens[Number(i)] ?? match);
 }
 
+/** Like unmaskTokens, but re-adds any token the model dropped: pings first, emoji and the rest last. */
+export function restoreTokens(text: string, tokens: string[]): string {
+    const kept = new Set<number>();
+    text.replace(PLACEHOLDER, (_, i) => (kept.add(Number(i)), ""));
+
+    const missing = tokens.filter((_, i) => !kept.has(i));
+    const isPing = (t: string) => t.startsWith("<@") || t.startsWith("<#");
+    const before = missing.filter(isPing);
+    const after = missing.filter(t => !isPing(t));
+
+    return [...before, unmaskTokens(text, tokens), ...after].join(" ");
+}
+
 export async function rewrite(text: string, cfg: RewriteConfig, fetchFn: typeof fetch = fetch): Promise<string> {
     if (!cfg.apiKey) throw new Error("No OpenRouter API key set");
 
@@ -89,7 +102,7 @@ export async function rewrite(text: string, cfg: RewriteConfig, fetchFn: typeof 
         throw new Error("AI returned an empty reply");
     }
 
-    const result = unmaskTokens(content.trim(), tokens);
+    const result = restoreTokens(content.trim(), tokens);
     const maxLength = cfg.maxLength ?? 2000;
     if (result.length > maxLength) {
         throw new Error(`AI reply too long (${result.length}/${maxLength})`);
