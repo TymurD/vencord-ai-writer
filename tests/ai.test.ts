@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { maskTokens, rewrite, shouldRewrite, unmaskTokens } from "../aiWriter/ai.ts";
+import { maskTokens, rewrite, rewriteSafe, shouldRewrite, unmaskTokens } from "../aiWriter/ai.ts";
 
 const cfg = { apiKey: "k", model: "m", prompt: "p" };
 
@@ -134,5 +134,22 @@ describe("rewrite", () => {
     it("rejects a whitespace-only reply", async () => {
         const { fn } = fakeFetch(200, reply("   "));
         await assert.rejects(rewrite("hello", cfg, fn), /empty reply/);
+    });
+});
+
+describe("rewriteSafe", () => {
+    it("wraps a successful rewrite", async () => {
+        const { fn } = fakeFetch(200, reply("Hi"));
+        assert.deepEqual(await rewriteSafe("hello", cfg, fn), { ok: true, text: "Hi" });
+    });
+
+    it("returns the error message instead of throwing", async () => {
+        const { fn } = fakeFetch(401, { error: { message: "bad key" } });
+        assert.deepEqual(await rewriteSafe("hello", cfg, fn), { ok: false, error: "OpenRouter 401: bad key" });
+    });
+
+    it("reports network failures readably", async () => {
+        const fn = (async () => { throw new TypeError("fetch failed"); }) as unknown as typeof fetch;
+        assert.deepEqual(await rewriteSafe("hello", cfg, fn), { ok: false, error: "fetch failed" });
     });
 });

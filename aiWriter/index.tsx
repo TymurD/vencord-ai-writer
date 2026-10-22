@@ -1,10 +1,12 @@
 import { ChatBarButton, ChatBarButtonFactory } from "@api/ChatButtons";
-import definePlugin, { IconComponent } from "@utils/types";
+import definePlugin, { IconComponent, PluginNative } from "@utils/types";
 import { showToast, useEffect, UserStore, useState } from "@webpack/common";
 
-import { rewrite, shouldRewrite } from "./ai";
+import { shouldRewrite } from "./ai";
 import { settings } from "./settings";
 import { openSettingsModal } from "./SettingsModal";
+
+const Native = VencordNative.pluginHelpers.AiWriter as PluginNative<typeof import("./native")>;
 
 // In-memory only, so AI mode is always off after a restart.
 let aiEnabled = false;
@@ -55,15 +57,17 @@ async function maybeRewrite(msg: { content: string; }) {
     if (!aiEnabled || !shouldRewrite(msg.content)) return;
 
     showToast({ text: "Rewriting…" });
-    try {
-        const { apiKey, model, prompt } = settings.store;
-        // premiumType 2 = full Nitro, which raises Discord's limit to 4000
-        const maxLength = UserStore.getCurrentUser()?.premiumType === 2 ? 4000 : 2000;
-        msg.content = await rewrite(msg.content, { apiKey, model, prompt, maxLength });
-    } catch (e) {
-        showToast({ text: `AI Writer: ${e instanceof Error ? e.message : String(e)}`, variant: "critical" });
+    const { apiKey, model, prompt } = settings.store;
+    // premiumType 2 = full Nitro, which raises Discord's limit to 4000
+    const maxLength = UserStore.getCurrentUser()?.premiumType === 2 ? 4000 : 2000;
+
+    const res = await Native.rewriteMessage(msg.content, { apiKey, model, prompt, maxLength })
+        .catch(e => ({ ok: false as const, error: String(e) }));
+    if (!res.ok) {
+        showToast({ text: `AI Writer: ${res.error}`, variant: "critical" });
         return { cancel: true };
     }
+    msg.content = res.text;
 }
 
 export default definePlugin({

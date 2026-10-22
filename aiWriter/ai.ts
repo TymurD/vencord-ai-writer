@@ -80,3 +80,14 @@ export async function rewrite(text: string, cfg: RewriteConfig, fetchFn: typeof 
 
     return result;
 }
+
+export type RewriteResult = { ok: true; text: string; } | { ok: false; error: string; };
+
+/** Never throws, so the result survives the trip across Electron's IPC boundary intact. */
+export async function rewriteSafe(text: string, cfg: RewriteConfig, fetchFn: typeof fetch = fetch): Promise<RewriteResult> {
+    try {
+        return { ok: true, text: await rewrite(text, cfg, fetchFn) };
+    } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+}
