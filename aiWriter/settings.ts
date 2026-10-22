@@ -10,7 +10,7 @@ export const settings = definePluginSettings({
     model: {
         type: OptionType.STRING,
         description: "OpenRouter model id",
-        default: "x-ai/grok-4.3"
+        default: "cognitivecomputations/dolphin-mistral-24b-venice-edition"
     },
     apiKey: {
         type: OptionType.STRING,

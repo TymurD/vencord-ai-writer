@@ -106,7 +106,7 @@ Right-click the sparkle icon to open the settings window:
 | Field | What it does |
 |---|---|
 | **Rules** | Rules the rewritten message must follow. "It" means your message. Leave it empty to just fix spelling and grammar. |
-| **Model** | An OpenRouter model id, e.g. `x-ai/grok-4.3`. Browse [openrouter.ai/models](https://openrouter.ai/models). |
+| **Model** | An OpenRouter model id, e.g. `cognitivecomputations/dolphin-mistral-24b-venice-edition`. Browse [openrouter.ai/models](https://openrouter.ai/models). |
 | **OpenRouter API key** | Your `sk-or-…` key. Shown masked in this window only. |
 | **Also rewrite edits** | Off by default. When on, editing a message while AI mode is on rewrites the edit too. |
 
@@ -122,7 +122,7 @@ This is the setup I use day to day. Fill in the window like this:
   It must sound casual and natural.
   It must stay in the same language I wrote in.
   ```
-- **Model:** `x-ai/grok-4.3`
+- **Model:** `cognitivecomputations/dolphin-mistral-24b-venice-edition`
 - **OpenRouter API key:** `sk-or-v1-…` (your own key)
 - **Also rewrite edits:** off
 
@@ -132,7 +132,7 @@ Vencord saves these in its settings file: `~/.config/vesktop/settings/settings.j
 "AiWriter": {
     "enabled": true,
     "prompt": "It must fix my spelling and grammar.\nIt must sound casual and natural.\nIt must stay in the same language I wrote in.",
-    "model": "x-ai/grok-4.3",
+    "model": "cognitivecomputations/dolphin-mistral-24b-venice-edition",
     "apiKey": "sk-or-v1-...",
     "rewriteEdits": false
 }
@@ -159,9 +159,9 @@ Rules that ask for long output can push a reply past Discord's limit (2000 chara
 
 | Model id | Good for |
 |---|---|
-| `x-ai/grok-4.3` | **Default.** Smart, good in many languages, follows rules well and rarely refuses blunt wording. |
-| `mistralai/mistral-large-2512` | Cheaper, strong in European languages, lightly filtered. Occasionally rate-limited (HTTP 429). |
-| `cognitivecomputations/dolphin-mistral-24b-venice-edition` | Cheapest and almost never refuses, but weaker at following rules and sometimes answers your message instead of rewriting it. |
+| `cognitivecomputations/dolphin-mistral-24b-venice-edition` | **Default.** Cheap and almost never refuses, but weaker at following rules and sometimes answers your message instead of rewriting it. |
+| `x-ai/grok-4.3` | Smartest of these: good in many languages, follows rules well and rarely refuses blunt wording. Switch to it if Dolphin answers your messages instead of rewriting them. |
+| `mistralai/mistral-large-2512` | Cheaper than Grok, strong in European languages, lightly filtered. Occasionally rate-limited (HTTP 429). |
 
 Strictly safety-tuned models (e.g. the `openai/gpt-oss-*` family) may refuse to rewrite some messages.
 
@@ -190,7 +190,7 @@ What is never rewritten:
 | `AI returned an empty reply` | A one-off glitch from the provider. Send again. |
 | `AI reply too long (2350/2000)` | The model wrote more than Discord allows. Send again, or add a rule like "It must be under 1500 characters." |
 | `OpenRouter request timed out` | No answer within 30 seconds. Try again or use a faster model. |
-| The model answers your message instead of rewriting it | Use a stronger model (Grok), or soften role-play rules. Small models get this wrong more often. |
+| The model answers your message instead of rewriting it | Dolphin (the default) does this sometimes, especially with role-play rules. Switch to `x-ai/grok-4.3` or soften the rules. |
 | No sparkle icon | Check that Vesktop's Vencord Location points at `Vencord/dist`, that AiWriter is enabled in Plugins, and that you fully quit and restarted Vesktop. |
 | Changes don't show up after rebuilding | Quit Vesktop from the tray and start it again. Part of the plugin runs in Vesktop's main process, which only reloads on a full restart. |
 
